@@ -5,9 +5,9 @@ package main
 import (
 	"fmt"
 	"strings"
-	"encoding/csv"
-	"os"
+	"database/sql"
 	"log"
+	_ "github.com/mattn/go-sqlite3"
 )
 var emails []string = []string{
 	"user1@domain1.com",
@@ -17,38 +17,46 @@ var emails []string = []string{
 
 func createAlias(email string) string{
 	username := strings.SplitAfter(email,"@")
-//	newAlias := username[0] + "domain2.com"
 	newAlias := fmt.Sprintf("%sdomain2.com", username[0])
-//	fmt.Println(newEmail)
 	return newAlias
+}
+
+func tableExists() {
+	//Make sure the db and table to store users exists.
+
+	db, _ := sql.Open("sqlite3", "./users.db")
+	statement, _ := db.Prepare("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT, alias TEXT)")
+
+	statement.Exec()
+}
+func addNewRecord(email string, alias string){
+	db, _ := sql.Open("sqlite3", "./users.db")
+	statement,_ := db.Prepare("INSERT INTO users(email,alias) VALUES(?,?)")
+	statement.Exec(email,alias)
 }
 
 
 func main() {
-	//I want to keep a local record of all the written emails, currently I am going
-	//to use a csv file, as a database.
-	file, err := os.OpenFile("emails.csv", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	
-	if err != nil {
-		fmt.Println("Error opening file: ", err)
-		return
-	}
-	defer file.Close()
+	//make sure db and table exists
+	tableExists()
 
-	w := csv.NewWriter(file)
+	db, _ := sql.Open("sqlite3", "./users.db")
 
-	for _,  email := range emails {
-
-		alias := createAlias(email)
-		if err := w.Write([]string{email,alias}); err != nil {
-			log.Fatalln("error writing record to csv: ", err)
+	for _, email := range emails{
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE email= ?);",email).Scan(&exists)
+		if err != nil {
+			log.Fatal(err)
+			return
 		}
-//		fmt.Printf("\nOriginal Email: %v, Alias: %s", v, alias)
-	}
 
-	w.Flush()
+		if exists {
+			fmt.Printf("REcord with email %s exists\n", email)
+		} else {
+			alias := createAlias(email)
+			fmt.Printf("Creating Alias: %s for user %s\n", alias, email)
+			addNewRecord(email,alias)
 
-	if err := w.Error(); err != nil {
-		log.Fatal(err)
+		}
 	}
 }
